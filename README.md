@@ -86,7 +86,7 @@ Below are several ideas.
 1. **Reward shaping:** The default reward consists of the raw Reasoning-Gym score and a score for the answer format. Can you suggest more useful rewards? You may modify `_accuracy_reward()` and `_format_reward()` in `trainer.py`, or their relative `reward_weights` in `multi_tasks.yaml`.
 2. **Hyper-parameters:** Consider hyper-parameters in `config/multi_tasks.yaml`, specifically under the section titles `Training steps`, `Batch sizes`, `Learning rate`, `GRPO-specific`, `Model behavior`, `LORA`. Can you tell what each hyper-parameter does? You will probably not have time to experiment with all of them, but can you guess which ones have the largest effect on training?
     * Note: some parameters are passed to TRL or Reasoning-Gym, whereas others are used directly.
-3. **Development cycles**: Can you shorten the feedback-loop for more extensive experimentation? The default configuration trains for 200 iterations and evaluates every 100 iterations, with full-model fine-tuning.
+3. **Development cycles**: Can you shorten the feedback-loop so that you can run more experiments? The default configuration trains for 200 iterations and evaluates every 100 iterations, with full-model fine-tuning.
 4. **GPU utilization:** What is the GPU utilization under the current training? Which hyper-parameters can be used to increase it, if needed?
 5. **Extended:**
     * Try using TRL's KL-regularization. Notice that it restricts the model updates with respect to the *original* model weights ("global" regularization). Modify the regularization to be "local": every update, restrict the new model with respect to the *current* model, not the original one.
