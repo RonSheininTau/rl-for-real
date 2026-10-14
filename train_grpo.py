@@ -301,13 +301,16 @@ def _run_training(reasoning_gym_args, training_args, model_args, logger):
     ckpt = _find_checkpoint(reasoning_gym_args, training_args, logger)
     
     # Run baseline evaluation (Step 0)
-    print("\n" + "="*60)
-    print("Running baseline evaluation (Step 0)...")
-    print("="*60)
-    baseline_results = eval_callback._evaluate(model, step=0)
-    eval_callback._print_results(baseline_results, step=0)
-    eval_callback._log_to_wandb(baseline_results, step=0)
-    eval_callback._save_results(baseline_results, step=0)
+    if reasoning_gym_args.skip_baseline_eval:
+        logger.info("Skipping baseline evaluation (skip_baseline_eval=true)")
+    else:
+        print("\n" + "="*60)
+        print("Running baseline evaluation (Step 0)...")
+        print("="*60)
+        baseline_results = eval_callback._evaluate(model, step=0)
+        eval_callback._print_results(baseline_results, step=0)
+        eval_callback._log_to_wandb(baseline_results, step=0)
+        eval_callback._save_results(baseline_results, step=0)
 
     # Train!
     logger.info("\n" + "="*60)

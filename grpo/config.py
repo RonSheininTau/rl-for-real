@@ -62,6 +62,11 @@ class DatasetConfig:
     # If False: normal step-based counting
     batch_counts_as_step: bool = field(default=False)
 
+    # Skip the step-0 baseline eval. Useful in a sweep where model/eval-set/seed are
+    # fixed across trials, since the baseline is then identical every run and reruns
+    # are wasted compute. Leave off for single runs where seeing baseline-vs-final matters.
+    skip_baseline_eval: bool = field(default=False)
+
     def __post_init__(self):
         # Parse datasets from JSON string if needed (for CLI/sweep support)
         self.datasets = _parse_datasets(self.datasets)
