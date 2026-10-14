@@ -63,6 +63,14 @@ reward_weights:  # Weights for [accuracy_reward, format_reward]
   - 1.0
 max_completion_length: 384
 
+# Optional: LLM-judge reward on reasoning quality inside <think> (off by default)
+# Judge matches the policy's capability tier (Qwen2.5-3B) rather than the toy config's smaller judge
+#use_process_reward: true
+#process_reward_model: Qwen/Qwen2.5-3B-Instruct
+#process_reward_sample_rate: 0.15
+#beta: 0.02  # see syllogism_toy.yaml comment - same reward-hacking rationale applies here
+#process_reward_criteria: engagement,non_contradiction,self_consistency,step_structure,no_repetition
+
 # Model behavior
 temperature: 0.6  # training temperature
 eval_temperature: 0.2  # eval temperature (0 = greedy/deterministic)

@@ -62,10 +62,21 @@ class DatasetConfig:
     # If False: normal step-based counting
     batch_counts_as_step: bool = field(default=False)
 
+    # Process reward (LLM-as-judge rating of <think> quality, independent of final-answer correctness)
+    use_process_reward: bool = field(default=False)
+    process_reward_model: str = field(default="Qwen/Qwen2.5-1.5B-Instruct")  # judge model, loaded separately from the policy
+    process_reward_weight: float = field(default=1.0)  # applied only if reward_weights doesn't already carry a 3rd entry
+    process_reward_sample_rate: float = field(default=0.15)  # fraction of prompt-groups judged per batch; rest score 0.0
+    # Comma-separated subset of: engagement, non_contradiction, self_consistency, step_structure, no_repetition
+    process_reward_criteria: str = field(default="engagement,non_contradiction,self_consistency,step_structure,no_repetition")
+
     def __post_init__(self):
         # Parse datasets from JSON string if needed (for CLI/sweep support)
         self.datasets = _parse_datasets(self.datasets)
         self.eval_datasets = _parse_datasets(self.eval_datasets)
+
+        # Parse process reward criteria from comma-separated string into a list
+        self.process_reward_criteria = [c.strip() for c in self.process_reward_criteria.split(",") if c.strip()]
         
         # Convert training datasets
         if self.datasets:

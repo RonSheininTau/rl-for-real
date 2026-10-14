@@ -1,8 +1,10 @@
 """Custom GRPO Trainer with reasoning-gym reward functions."""
 
+import random
 import re
 
 import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import GRPOConfig, GRPOTrainer
 
 from reasoning_gym.utils import extract_answer
@@ -37,13 +39,27 @@ class CustomGRPOTrainer(GRPOTrainer):
         log_reward_variance: bool = True,
         verbose_variance_logging: bool = False,
         batch_counts_as_step: bool = False,
+        use_process_reward: bool = False,
+        process_reward_model: str = None,
+        process_reward_weight: float = 1.0,
+        process_reward_sample_rate: float = 0.15,
+        process_reward_criteria: list[str] = None,
     ):
+        reward_funcs = [self._accuracy_reward, self._format_reward]
+        if use_process_reward:
+            unknown = set(process_reward_criteria or []) - set(self._PROCESS_REWARD_CRITERIA)
+            if unknown:
+                raise ValueError(
+                    f"Unknown process_reward_criteria: {unknown}. "
+                    f"Valid: {list(self._PROCESS_REWARD_CRITERIA)}"
+                )
+            reward_funcs.append(self._process_reward)
+            if args.reward_weights and len(args.reward_weights) < len(reward_funcs):
+                args.reward_weights = list(args.reward_weights) + [process_reward_weight]
+
         super().__init__(
             model=model,
-            reward_funcs=[
-                self._accuracy_reward,
-                self._format_reward,
-            ],
+            reward_funcs=reward_funcs,
             args=args,
             processing_class=tokenizer,
             train_dataset=train_dataset,
@@ -53,6 +69,16 @@ class CustomGRPOTrainer(GRPOTrainer):
         self.verbose_variance_logging = verbose_variance_logging
         self.batch_counts_as_step = batch_counts_as_step
         self._step_count = 0
+
+        self.use_process_reward = use_process_reward
+        self.process_reward_sample_rate = process_reward_sample_rate
+        self.process_reward_criteria_names = process_reward_criteria or []
+        if use_process_reward:
+            self._judge_tokenizer = AutoTokenizer.from_pretrained(process_reward_model)
+            self._judge_model = AutoModelForCausalLM.from_pretrained(
+                process_reward_model, torch_dtype=torch.bfloat16
+            ).to(self.accelerator.device)
+            self._judge_model.eval()
     
     def log(self, logs: dict, start_time: float = None) -> None:
         """Override log to manually log to wandb with correct x-axis."""
@@ -199,3 +225,79 @@ class CustomGRPOTrainer(GRPOTrainer):
             return count
 
         return [count_tags(c) for c in completions]
+
+    def _process_reward(self, completions: list[str], **kwargs) -> list[float]:
+        """LLM-judge reward rating <think> quality, independent of final-answer correctness.
+
+        Samples whole prompt-groups (not individual completions) so judged vs. unjudged
+        never creates an artificial advantage gap within the same group - see
+        _log_variance for the same group-slicing pattern.
+        """
+        n = len(completions)
+        num_gens = self.args.num_generations
+        num_groups = n // num_gens
+        rewards = [0.0] * n
+        if num_groups == 0:
+            return rewards
+
+        sample_size = max(1, round(num_groups * self.process_reward_sample_rate))
+        sampled_groups = random.sample(range(num_groups), min(sample_size, num_groups))
+
+        items = kwargs.get("item", [None] * n)
+        for g in sampled_groups:
+            start, end = g * num_gens, (g + 1) * num_gens
+            for i in range(start, end):
+                think = self._extract_think(completions[i])
+                if not think:
+                    continue
+                question = items[i]["question"] if items[i] else ""
+                rewards[i] = self._judge_score(question, think)
+        return rewards
+
+    @staticmethod
+    def _extract_think(text: str) -> str:
+        match = re.search(r"<think>(.*?)</think>", text, re.DOTALL | re.IGNORECASE)
+        return match.group(1).strip() if match else ""
+
+    # Registry of candidate rubric criteria. Which ones are active is controlled by
+    # process_reward_criteria in the config - this dict is the full menu to pick from.
+    # Scored via P(Yes) logprob rather than a generated scalar: small judge models are
+    # unreliable at holistic 0.0-1.0 grading but comparably reliable at yes/no
+    # classification - same reasoning behind _format_reward's additive binary checks.
+    _PROCESS_REWARD_CRITERIA = {
+        "engagement": "Does this reasoning explicitly engage with the specific details "
+                      "given in the question (not generic or templated text)?",
+        "non_contradiction": "Is this reasoning free of self-contradiction (it never "
+                             "states two incompatible things)?",
+        "self_consistency": "Does the reasoning's own stated conclusion actually follow "
+                            "from the steps shown, regardless of whether that conclusion "
+                            "is factually correct?",
+        "step_structure": "Does the reasoning proceed through clear, discrete steps "
+                          "rather than jumping straight to a conclusion?",
+        "no_repetition": "Is the reasoning free of pointless repetition of the same "
+                         "phrase or sentence?",
+    }
+
+    def _judge_score(self, question: str, reasoning: str) -> float:
+        criteria = [self._PROCESS_REWARD_CRITERIA[name] for name in self.process_reward_criteria_names]
+        if not criteria:
+            return 0.0
+        scores = [self._yes_prob(question, reasoning, c) for c in criteria]
+        return sum(scores) / len(scores)
+
+    def _yes_prob(self, question: str, reasoning: str, criterion: str) -> float:
+        prompt = (
+            f"Question: {question}\n\nReasoning: {reasoning}\n\n{criterion} "
+            "Answer with exactly one word: Yes or No."
+        )
+        chat = [{"role": "user", "content": prompt}]
+        judge_input = self._judge_tokenizer.apply_chat_template(
+            chat, tokenize=False, add_generation_prompt=True
+        )
+        inputs = self._judge_tokenizer(judge_input, return_tensors="pt").to(self._judge_model.device)
+        with torch.no_grad():
+            logits = self._judge_model(**inputs).logits[0, -1]
+        yes_id = self._judge_tokenizer.encode(" Yes", add_special_tokens=False)[0]
+        no_id = self._judge_tokenizer.encode(" No", add_special_tokens=False)[0]
+        probs = torch.softmax(logits[[yes_id, no_id]], dim=0)
+        return probs[0].item()

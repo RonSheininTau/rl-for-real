@@ -73,6 +73,17 @@ reward_weights:  # Weights for [accuracy_reward, format_reward]
 max_prompt_length: 512
 max_completion_length: 512
 
+# Optional: LLM-judge reward on reasoning quality inside <think> (off by default)
+#use_process_reward: true
+#process_reward_model: Qwen/Qwen2.5-1.5B-Instruct
+#process_reward_sample_rate: 0.15
+#beta: 0.02  # recommended alongside an LLM-judge reward: without a KL anchor to the
+             # reference policy, the model can learn to game the judge (stylistic
+             # tricks that score well) rather than genuinely reason better
+# Pick any subset of: engagement, non_contradiction, self_consistency, step_structure, no_repetition
+#process_reward_criteria: engagement,non_contradiction,self_consistency,step_structure,no_repetition
+# e.g. to use just one: process_reward_criteria: self_consistency
+
 # Model behavior
 temperature: 0.6  # training temperature
 eval_temperature: 0.6  # eval temperature (0 = greedy/deterministic)
