@@ -143,7 +143,19 @@ def _init_wandb(reasoning_gym_args, training_args, model_args, logger, mode="tra
             name = training_args.run_name
             if mode == "eval_only":
                 name = f"{name}_eval" if name else "eval"
-            
+            elif os.environ.get("WANDB_SWEEP_ID"):
+                # Under a sweep, every trial shares run_name from the YAML - build a
+                # descriptive name from the actual swept values so runs are
+                # identifiable in the wandb UI without digging into columns.
+                parts = [name] if name else []
+                parts.append(f"lr{training_args.learning_rate}")
+                parts.append(f"ng{training_args.num_generations}")
+                if reasoning_gym_args.use_process_reward:
+                    crit = "+".join(reasoning_gym_args.process_reward_criteria) or "none"
+                    parts.append(f"crit-{crit}")
+                    parts.append(f"w{reasoning_gym_args.process_reward_weight}")
+                name = "_".join(parts)
+
             wandb.init(
                 project=os.environ.get("WANDB_PROJECT", "rl-for-real"),
                 name=name,
