@@ -19,6 +19,7 @@ class ReasoningGymDataset(Dataset):
     Formats prompts with chat templates for use with GRPOTrainer.
     """
     
+    
     def __init__(
         self,
         tokenizer,
