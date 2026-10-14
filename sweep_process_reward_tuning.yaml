@@ -1,0 +1,47 @@
+# W&B Sweep: test whether more rollouts + a lower process-reward weight recovers
+# the no-process-reward baseline (70% eval accuracy, lr=5e-7 num_generations=2).
+#
+# Fixed on the `engagement` criterion, since that's the one with a confirmed
+# regression (53.3% vs 70% baseline) to compare against directly. 2x2 grid:
+#   - num_generations: more rollouts per group -> less noisy advantage estimate,
+#     and the one sampled group/step gets more judged completions, not just more groups
+#   - process_reward_weight: de-emphasize process reward relative to accuracy (both
+#     currently weighted 1.0 via the auto-pad in CustomGRPOTrainer.__init__)
+#
+# Requires the process-reward branch.
+#
+# Usage (from repo root, in Colab after `wandb login`):
+#   !wandb sweep sweep_process_reward_tuning.yaml
+#   !wandb agent <entity>/<project>/<sweep_id> --count 4
+
+program: train_grpo.py
+project: rl-for-real
+method: grid
+
+metric:
+  name: eval/accuracy
+  goal: maximize
+
+parameters:
+  num_generations:
+    values: [4, 8]
+  process_reward_weight:
+    values: [0.3, 0.5]
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - --config
+  - config/syllogism_toy.yaml
+  - --use_process_reward
+  - "true"
+  - --process_reward_criteria
+  - engagement
+  - --learning_rate
+  - "5e-7"
+  - --skip_baseline_eval
+  - "true"
+  - --max_steps
+  - "100"
+  - ${args}
