@@ -1,0 +1,29 @@
+# W&B Sweep config for a small hyperparameter search on the toy syllogism task.
+#
+# Usage (from repo root, e.g. in Colab after `wandb login`):
+#   !wandb sweep sweep.yaml
+#   # copy the sweep id it prints, then:
+#   !wandb agent <entity>/<project>/<sweep_id> --count 10
+
+program: train_grpo.py
+project: rl-for-real
+method: random
+
+metric:
+  name: eval/accuracy
+  goal: maximize
+
+parameters:
+  learning_rate:
+    values: [5e-7, 1e-6, 3e-6, 1e-5]
+  num_generations:
+    values: [2, 4, 8]
+
+# Keep everything else pinned to the toy config; only the two params above vary.
+command:
+  - ${env}
+  - python
+  - ${program}
+  - --config
+  - config/syllogism_toy.yaml
+  - ${args_no_hyphens}
