@@ -37,7 +37,7 @@ model_name_or_path: Qwen/Qwen2.5-3B-Instruct
 # =============================================================================
 
 # Resume control
-auto_resume: false  # If true, auto-resume from last checkpoint in output_dir
+auto_resume: true  # If true, auto-resume from last checkpoint in output_dir
 
 # Training steps
 max_steps: 200
@@ -78,7 +78,7 @@ lora_dropout: 0.05
 # Evaluation & Checkpointing
 # =============================================================================
 
-output_dir: outputs
+output_dir: /content/drive/MyDrive/rl-for-real/outputs  # Drive-persisted so checkpoints survive a Colab disconnect
 
 # Eval-only mode (set via command line)
 eval_only: false           # Set to true to skip training and only evaluate
@@ -98,7 +98,7 @@ verbose_variance_logging: false  # Set to true for detailed per-prompt output
 #eval_delay: 0
 
 save_strategy: steps
-save_steps: 1000
+save_steps: 50  # was 1000 (> max_steps=200, so nothing ever saved mid-run) - now checkpoints at 50/100/150/200
 save_total_limit: 3
 
 logging_steps: 10
