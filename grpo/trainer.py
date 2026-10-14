@@ -1,5 +1,7 @@
 """Custom GRPO Trainer with reasoning-gym reward functions."""
 
+import ast
+import difflib
 import re
 
 import torch
@@ -111,18 +113,91 @@ class CustomGRPOTrainer(GRPOTrainer):
         """Compute accuracy reward using reasoning-gym's scoring function."""
         assert "item" in kwargs, "The 'item' argument must be provided."
         assert len(kwargs["item"]) == len(completions)
-        
+
         answers = [extract_answer(c) for c in completions]
-        rewards = [
-            self.train_dataset.data.score_answer(answer, item) 
-            for answer, item in zip(answers, kwargs["item"])
-        ]
-        
+        rewards = [self._score_item(answer, item) for answer, item in zip(answers, kwargs["item"])]
+
         if self.log_reward_variance:
             self._log_variance(rewards, answers, completions)
-        
+
         return rewards
-    
+
+    def _score_item(self, answer, item) -> float:
+        """Dispatch to a task-specific scorer where we have one, else reasoning-gym's own."""
+        task = item.get("metadata", {}).get("source_dataset")
+        if task == "number_filtering":
+            return self._number_filtering_jaccard(answer, item)
+        if task == "string_insertion":
+            return self._string_insertion_overlap(answer, item)
+        return self.train_dataset.data.score_answer(answer, item)
+
+    @staticmethod
+    def _number_filtering_jaccard(answer, item) -> float:
+        """Jaccard overlap between predicted and ground-truth filtered sets.
+
+        number_filtering is a selection task (output is a subset of the given
+        input numbers, not a computed value), so a wrong answer means "wrong
+        subset" - set overlap is a more informative signal than exact-list-match,
+        which scores a 4-out-of-5 correct answer the same as a 0-out-of-5 one.
+        """
+        true_list = item["metadata"]["result"]
+        if isinstance(true_list, str):
+            try:
+                true_list = ast.literal_eval(true_list)
+            except (ValueError, SyntaxError):
+                true_list = []
+
+        predicted = []
+        if answer:
+            # Tolerate prose wrapped around the list (e.g. "The result is [...]")
+            match = re.search(r"\[.*\]", answer, re.DOTALL)
+            try:
+                predicted = ast.literal_eval(match.group(0) if match else answer)
+            except (ValueError, SyntaxError, TypeError):
+                predicted = []
+
+        try:
+            predicted_set = {float(x) for x in predicted}
+            true_set = {float(x) for x in true_list}
+        except (ValueError, TypeError):
+            return 0.0
+
+        union = predicted_set | true_set
+        if not union:
+            return 1.0  # both empty - correctly filtered everything out
+        return len(predicted_set & true_set) / len(union)
+
+    @staticmethod
+    def _insertions(original: str, target: str) -> set:
+        """Set of (position_in_original, inserted_chars) insert ops from diffing original -> target."""
+        sm = difflib.SequenceMatcher(None, original, target, autojunk=False)
+        return {
+            (i1, target[j1:j2])
+            for tag, i1, i2, j1, j2 in sm.get_opcodes()
+            if tag == "insert"
+        }
+
+    def _string_insertion_overlap(self, answer, item) -> float:
+        """Overlap between the model's insertions and the correct insertions.
+
+        Scores only *where/what was inserted* relative to the original string,
+        not the whole string - so a model that gets the original characters
+        right but inserts one wrong character isn't penalized the same as one
+        that mangles the original text too. Jaccard over insertion-op sets,
+        same symmetric-overlap approach as _number_filtering_jaccard.
+        """
+        original = item["metadata"]["string"]
+        true_output = item["metadata"]["solution"]
+        predicted_output = answer.strip() if answer else ""
+
+        true_insertions = self._insertions(original, true_output)
+        predicted_insertions = self._insertions(original, predicted_output)
+
+        union = true_insertions | predicted_insertions
+        if not union:
+            return 1.0  # no insertions needed and none made - correct
+        return len(true_insertions & predicted_insertions) / len(union)
+
     def _log_variance(self, rewards: list[float], answers: list[str], completions: list[str]):
         """Log the percentage of prompts with reward variance across rollouts."""
         num_gens = self.args.num_generations

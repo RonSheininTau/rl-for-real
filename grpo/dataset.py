@@ -39,6 +39,18 @@ class ReasoningGymDataset(Dataset):
         item = self.data[idx]
         question = item["question"]
 
+        # family_relationships' own phrasing ("Respond only with the word...") conflicts
+        # with the <think>/<answer> format instruction below, and the model appears to
+        # follow the task's instruction instead - dropping tags entirely, which then
+        # makes extract_answer() miss even otherwise-correct answers. Reinforce the
+        # format requirement for this task specifically.
+        if item.get("metadata", {}).get("source_dataset") == "family_relationships":
+            question = (
+                f"{question}\n\n(Still follow the required format: show your reasoning "
+                "inside <think></think> tags, then give your final one-word answer "
+                "inside <answer></answer> tags.)"
+            )
+
         chat = []
         if self.developer_role is not None:
             chat.append({"role": self.developer_role, "content": self.developer_prompt})
