@@ -26,4 +26,4 @@ command:
   - ${program}
   - --config
   - config/syllogism_toy.yaml
-  - ${args_no_hyphens}
+  - ${args}
