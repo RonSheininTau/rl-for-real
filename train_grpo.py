@@ -143,7 +143,11 @@ def _init_wandb(reasoning_gym_args, training_args, model_args, logger, mode="tra
             name = training_args.run_name
             if mode == "eval_only":
                 name = f"{name}_eval" if name else "eval"
-            
+            elif os.environ.get("WANDB_SWEEP_ID"):
+                # Under a sweep, every trial shares the same run_name from the YAML -
+                # let wandb assign its own distinct per-trial name instead of colliding.
+                name = None
+
             wandb.init(
                 project=os.environ.get("WANDB_PROJECT", "rl-for-real"),
                 name=name,
