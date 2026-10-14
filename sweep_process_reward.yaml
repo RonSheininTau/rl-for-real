@@ -1,0 +1,46 @@
+# W&B Sweep: process-reward criterion ablation on the toy syllogism task.
+#
+# Tests each of the 5 rubric criteria ONE AT A TIME, added on top of the existing
+# accuracy+format reward, to isolate which single criterion actually helps.
+# Base hyperparameters are fixed to the best config found by the earlier
+# learning_rate/num_generations sweep (lr=5e-7, num_generations=2, 70% eval accuracy
+# in sweep 1ud4ne0r) - the only thing varying between runs here is which one
+# process-reward criterion is active.
+#
+# Requires the process-reward branch (process_reward_criteria doesn't exist on main).
+#
+# Usage (from repo root, in Colab after `wandb login`):
+#   !wandb sweep sweep_process_reward.yaml
+#   # copy the sweep id it prints, then:
+#   !wandb agent <entity>/<project>/<sweep_id> --count 5
+
+program: train_grpo.py
+project: rl-for-real
+method: grid  # exactly one run per criterion, not random sampling
+
+metric:
+  name: eval/accuracy
+  goal: maximize
+
+parameters:
+  process_reward_criteria:
+    values:
+      - engagement
+      - non_contradiction
+      - self_consistency
+      - step_structure
+      - no_repetition
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - --config
+  - config/syllogism_toy.yaml
+  - --use_process_reward
+  - "true"
+  - --learning_rate
+  - "5e-7"
+  - --num_generations
+  - "2"
+  - ${args}
